@@ -59,9 +59,9 @@ public class WhatsAppCallService extends AccessibilityService {
     private Handler handler;
     private boolean isProcessingCall = false;
     private long lastCallTime = 0;
-    private long lastAnsweredTime = 0;
+    private long lastAnsweredTime = -99999;
     private static final long DEBOUNCE_MS = 4000;
-    private static final long COOLDOWN_AFTER_ANSWER_MS = 15000; // 15 secunde pauza dupa raspuns
+    private static final long COOLDOWN_AFTER_ANSWER_MS = 12000; // 12 secunde pauza dupa raspuns
 
     @Override
     public void onCreate() {
@@ -179,9 +179,7 @@ public class WhatsAppCallService extends AccessibilityService {
             Log.i(TAG, "Apel raspuns cu succes!");
             lastAnsweredTime = System.currentTimeMillis();
         } else {
-            Log.w(TAG, "Nu am gasit buton, incerc tap gestural...");
-            lastAnsweredTime = System.currentTimeMillis();
-            tryGestureTap();
+            Log.w(TAG, "Nu am gasit butonul de raspuns.");
         }
 
         handler.postDelayed(() -> isProcessingCall = false, 5000);
