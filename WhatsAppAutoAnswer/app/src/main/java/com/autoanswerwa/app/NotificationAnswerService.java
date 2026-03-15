@@ -95,20 +95,36 @@ public class NotificationAnswerService extends NotificationListenerService {
         Notification.Action[] actions = notification.actions;
         if (actions == null) return;
 
+        // Prioritate 1: cauta actiunea VIDEO Answer
         for (Notification.Action action : actions) {
             if (action == null || action.title == null) continue;
             String actionTitle = action.title.toString().toLowerCase();
             Log.d(TAG, "Actiune: " + actionTitle);
-
-            if ((actionTitle.contains("answer") || actionTitle.contains("accept") ||
-                 actionTitle.contains("video") || actionTitle.contains("raspunde")) &&
+            if ((actionTitle.contains("video") || actionTitle.contains("answer video")) &&
                 !actionTitle.contains("decline") && !actionTitle.contains("refuz")) {
                 try {
                     action.actionIntent.send();
-                    Log.i(TAG, "Raspuns prin notificare: " + actionTitle);
+                    Log.i(TAG, "Raspuns VIDEO prin notificare: " + actionTitle);
                     return;
                 } catch (Exception e) {
-                    Log.e(TAG, "Eroare intent: " + e.getMessage());
+                    Log.e(TAG, "Eroare intent video: " + e.getMessage());
+                }
+            }
+        }
+
+        // Prioritate 2: orice Answer
+        for (Notification.Action action : actions) {
+            if (action == null || action.title == null) continue;
+            String actionTitle = action.title.toString().toLowerCase();
+            if ((actionTitle.contains("answer") || actionTitle.contains("accept") ||
+                 actionTitle.contains("raspunde")) &&
+                !actionTitle.contains("decline") && !actionTitle.contains("refuz")) {
+                try {
+                    action.actionIntent.send();
+                    Log.i(TAG, "Raspuns AUDIO prin notificare: " + actionTitle);
+                    return;
+                } catch (Exception e) {
+                    Log.e(TAG, "Eroare intent audio: " + e.getMessage());
                 }
             }
         }
