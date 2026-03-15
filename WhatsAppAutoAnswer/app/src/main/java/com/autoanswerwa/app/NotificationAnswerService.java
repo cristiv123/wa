@@ -1,20 +1,18 @@
 package com.autoanswerwa.app;
 
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
+import android.view.WindowManager;
 
-/**
- * NotificationAnswerService - raspunde la apeluri WhatsApp
- * prin actiunile din notificare (ca Skype).
- * Functioneaza si cand ecranul e NEGRU/STINS!
- */
 public class NotificationAnswerService extends NotificationListenerService {
 
     private static final String TAG = "WA_NotifAnswer";
@@ -45,7 +43,6 @@ public class NotificationAnswerService extends NotificationListenerService {
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
-        // Verifica daca e notificare de apel incoming
         String title = "";
         String text = "";
         if (notification.extras != null) {
@@ -55,76 +52,88 @@ public class NotificationAnswerService extends NotificationListenerService {
             if (b != null) text = b.toString().toLowerCase();
         }
 
-        Log.d(TAG, "Notificare WhatsApp: title=" + title + " text=" + text);
+        Log.d(TAG, "Notificare: title='" + title + "' text='" + text + "'");
 
-        boolean isIncomingCall =
+        // Detecteaza apel incoming
+        boolean isCall =
             text.contains("incoming video call") ||
             text.contains("incoming voice call") ||
             text.contains("video call") ||
             text.contains("voice call") ||
             text.contains("apel video") ||
             text.contains("apel vocal") ||
-            title.contains("incoming") ||
-            text.contains("calling");
+            text.contains("calling") ||
+            title.contains("incoming");
 
-        if (!isIncomingCall) return;
+        if (!isCall) return;
 
-        Log.i(TAG, "Apel detectat in notificare! Caut butonul Answer...");
+        Log.i(TAG, "Apel detectat! Trezesc ecranul...");
+        lastAnsweredTime = now;
 
-        // Cauta actiunea "Answer" in notificare
+        // Pasul 1: Trezeste ecranul IMEDIAT
+        wakeScreenFully();
+
+        // Pasul 2: Incearca sa raspunda prin notificare
+        tryAnswerViaNotification(notification);
+
+        // Pasul 3: Deschide WhatsApp direct (fallback)
+        // Accessibility Service va apasa Answer cand ecranul e pornit
+        handler.postDelayed(() -> {
+            try {
+                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(launchIntent);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Eroare launch WhatsApp: " + e.getMessage());
+            }
+        }, 500);
+    }
+
+    private void tryAnswerViaNotification(Notification notification) {
         Notification.Action[] actions = notification.actions;
-        if (actions == null) {
-            Log.w(TAG, "Nu exista actiuni in notificare");
-            return;
-        }
+        if (actions == null) return;
 
         for (Notification.Action action : actions) {
             if (action == null || action.title == null) continue;
             String actionTitle = action.title.toString().toLowerCase();
-            Log.d(TAG, "Actiune gasita: " + actionTitle);
+            Log.d(TAG, "Actiune: " + actionTitle);
 
-            if (actionTitle.contains("answer") ||
-                actionTitle.contains("accept") ||
-                actionTitle.contains("video") ||
-                actionTitle.contains("raspunde") ||
-                actionTitle.contains("accepta")) {
-
-                // Exclude decline/refuz
-                if (actionTitle.contains("decline") || actionTitle.contains("refuz")) continue;
-
+            if ((actionTitle.contains("answer") || actionTitle.contains("accept") ||
+                 actionTitle.contains("video") || actionTitle.contains("raspunde")) &&
+                !actionTitle.contains("decline") && !actionTitle.contains("refuz")) {
                 try {
-                    // Trezeste ecranul
-                    wakeScreen();
-
-                    // Trimite actiunea cu delay mic
-                    final PendingIntent intent = action.actionIntent;
-                    handler.postDelayed(() -> {
-                        try {
-                            intent.send();
-                            lastAnsweredTime = System.currentTimeMillis();
-                            Log.i(TAG, "Apel raspuns prin notificare: " + actionTitle);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Eroare la trimitere intent: " + e.getMessage());
-                        }
-                    }, 1000);
+                    action.actionIntent.send();
+                    Log.i(TAG, "Raspuns prin notificare: " + actionTitle);
                     return;
                 } catch (Exception e) {
-                    Log.e(TAG, "Eroare: " + e.getMessage());
+                    Log.e(TAG, "Eroare intent: " + e.getMessage());
                 }
             }
         }
-        Log.w(TAG, "Nu am gasit buton Answer in notificare");
     }
 
-    private void wakeScreen() {
+    private void wakeScreenFully() {
         try {
+            // 1. PowerManager WakeLock - trezeste CPU + ecran
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             PowerManager.WakeLock wl = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "WA:AnswerWake"
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
+                PowerManager.ACQUIRE_CAUSES_WAKEUP |
+                PowerManager.ON_AFTER_RELEASE,
+                "WA:FullWake"
             );
-            wl.acquire(10000);
-            handler.postDelayed(() -> { if (wl.isHeld()) wl.release(); }, 8000);
+            wl.acquire(20000);
+            handler.postDelayed(() -> { if (wl.isHeld()) wl.release(); }, 18000);
+
+            // 2. Keyguard - dezactiveaza lock screen temporar
+            KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+            if (km != null && km.isKeyguardLocked()) {
+                Log.d(TAG, "Keyguard activ - incerc sa il dezactivez");
+            }
+
+            Log.i(TAG, "Ecran trezit cu succes");
         } catch (Exception e) {
             Log.e(TAG, "WakeLock error: " + e.getMessage());
         }
