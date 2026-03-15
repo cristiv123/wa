@@ -1,9 +1,7 @@
 package com.autoanswerwa.app;
 
 import android.accessibilityservice.AccessibilityService;
-import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.GestureDescription;
-import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Handler;
@@ -14,284 +12,285 @@ import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.util.List;
 
-/**
- * WhatsAppCallService
- *
- * Detecteaza apelurile WhatsApp (audio si video) si raspunde automat.
- * Functioneaza prin Accessibility Service - simuleaza apasarea butonului de raspuns.
- *
- * Compatibil cu:
- * - WhatsApp normal (com.whatsapp)
- * - WhatsApp Business (com.whatsapp.w4b)
- * - Huawei EMUI / HarmonyOS
- * - Android 8+
- */
 public class WhatsAppCallService extends AccessibilityService {
 
     private static final String TAG = "WA_AutoAnswer";
-
-    // Package-urile WhatsApp monitorizate
     private static final String WHATSAPP_PACKAGE = "com.whatsapp";
     private static final String WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b";
 
-    // ID-urile butoanelor din interfata WhatsApp (pot varia dupa versiune)
-    // VIDEO call answer buttons
-    private static final String[] VIDEO_BUTTON_IDS = {
+    // Toate ID-urile posibile pentru butonul de raspuns video/audio
+    private static final String[] ALL_ANSWER_IDS = {
+        // Video answer buttons
         "com.whatsapp:id/answer_video_call_btn",
         "com.whatsapp:id/video_call_btn",
         "com.whatsapp:id/call_btn_answer_video",
-        "com.whatsapp.w4b:id/answer_video_call_btn",
-        "com.whatsapp.w4b:id/video_call_btn"
-    };
-
-    // AUDIO call answer buttons
-    private static final String[] AUDIO_BUTTON_IDS = {
+        "com.whatsapp:id/answer_video",
+        // Audio answer buttons  
         "com.whatsapp:id/answer_call_btn",
         "com.whatsapp:id/answer_voice_btn",
         "com.whatsapp:id/call_btn_answer_voice",
+        "com.whatsapp:id/answer",
+        // Generic answer button
+        "com.whatsapp:id/btn_answer",
+        "com.whatsapp:id/call_answer_btn",
+        // WhatsApp Business
+        "com.whatsapp.w4b:id/answer_video_call_btn",
         "com.whatsapp.w4b:id/answer_call_btn",
-        "com.whatsapp.w4b:id/answer_voice_btn"
+        "com.whatsapp.w4b:id/answer_video",
+        "com.whatsapp.w4b:id/answer",
     };
 
-    // Text-uri care apar pe ecranul de apel incoming
-    private static final String[] INCOMING_CALL_TEXTS = {
-        "incoming video call", "apel video", "video-anruf",
-        "incoming voice call", "apel vocal", "sprachanruf",
-        "whatsapp video", "whatsapp call"
+    // Texte pe care le cauta pe butoane (pentru banner notifications)
+    private static final String[] ANSWER_BUTTON_TEXTS = {
+        "answer", "raspunde", "accepta", "accept",
+        "video", "antworten", "répondre", "risposta"
+    };
+
+    // Texte care indica un apel incoming
+    private static final String[] CALL_INDICATOR_TEXTS = {
+        "incoming video call", "incoming voice call",
+        "apel video", "apel vocal", "apel audio",
+        "video call", "voice call",
+        "whatsapp video", "whatsapp call",
+        "video-anruf", "sprachanruf",
+        "appel vidéo", "appel vocal"
     };
 
     private Handler handler;
     private boolean isProcessingCall = false;
     private long lastCallTime = 0;
-    private static final long DEBOUNCE_MS = 3000; // 3 secunde intre apeluri
+    private static final long DEBOUNCE_MS = 4000;
 
     @Override
     public void onCreate() {
         super.onCreate();
         handler = new Handler(Looper.getMainLooper());
-        Log.i(TAG, "✅ WhatsApp Auto Answer Service pornit!");
+        Log.i(TAG, "Serviciu pornit");
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
 
-        String packageName = "";
-        if (event.getPackageName() != null) {
-            packageName = event.getPackageName().toString();
-        }
+        String pkg = event.getPackageName() != null ? event.getPackageName().toString() : "";
 
-        // Filtram doar WhatsApp
-        if (!packageName.equals(WHATSAPP_PACKAGE) &&
-            !packageName.equals(WHATSAPP_BUSINESS_PACKAGE)) {
-            return;
-        }
+        // Raspunde si la notificari sistem (banner-ul Huawei vine din system UI)
+        boolean isWhatsApp = pkg.equals(WHATSAPP_PACKAGE) || pkg.equals(WHATSAPP_BUSINESS_PACKAGE);
+        boolean isSystemUI = pkg.equals("com.android.systemui") || pkg.equals("com.huawei.systemui")
+                          || pkg.equals("android") || pkg.equals("com.huawei.android.launcher");
+
+        if (!isWhatsApp && !isSystemUI) return;
 
         int eventType = event.getEventType();
-
-        // Verificam la schimbari de fereastra si continut
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
-
-            // Debounce - nu procesam la interval prea scurt
-            long now = System.currentTimeMillis();
-            if (now - lastCallTime < DEBOUNCE_MS && isProcessingCall) {
-                return;
-            }
-
-            // Verificam daca este un apel incoming
-            if (isIncomingCall(event)) {
-                Log.i(TAG, "📞 Apel detectat! Pornesc raspunsul automat...");
-                lastCallTime = now;
-                isProcessingCall = true;
-
-                // Delay de 1.5 secunde inainte de a raspunde
-                // (interfata WhatsApp are nevoie de timp sa se incarce)
-                int delayMs = getAnswerDelay();
-                handler.postDelayed(() -> {
-                    answerCall();
-                }, delayMs);
-            }
-        }
-    }
-
-    /**
-     * Verifica daca evenimentul este un apel WhatsApp incoming
-     */
-    private boolean isIncomingCall(AccessibilityEvent event) {
-        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
-        if (rootNode == null) return false;
-
-        try {
-            // Metoda 1: Cautam butoanele de raspuns in interfata
-            for (String buttonId : VIDEO_BUTTON_IDS) {
-                List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByViewId(buttonId);
-                if (nodes != null && !nodes.isEmpty()) {
-                    Log.d(TAG, "🎥 Gasit buton VIDEO: " + buttonId);
-                    return true;
-                }
-            }
-
-            for (String buttonId : AUDIO_BUTTON_IDS) {
-                List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByViewId(buttonId);
-                if (nodes != null && !nodes.isEmpty()) {
-                    Log.d(TAG, "🔊 Gasit buton AUDIO: " + buttonId);
-                    return true;
-                }
-            }
-
-            // Metoda 2: Cautam text specific apelului incoming
-            String screenText = getScreenText(rootNode).toLowerCase();
-            for (String callText : INCOMING_CALL_TEXTS) {
-                if (screenText.contains(callText)) {
-                    Log.d(TAG, "📝 Gasit text apel: " + callText);
-                    return true;
-                }
-            }
-
-        } finally {
-            rootNode.recycle();
-        }
-
-        return false;
-    }
-
-    /**
-     * Raspunde la apel (video sau audio, configurabil din Settings)
-     */
-    private void answerCall() {
-        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
-        if (rootNode == null) {
-            Log.w(TAG, "⚠️ Root node null, incerc din nou...");
-            isProcessingCall = false;
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) {
             return;
         }
 
-        try {
-            boolean answered = false;
-            boolean preferVideo = getPreferVideo();
+        long now = System.currentTimeMillis();
+        if (isProcessingCall && now - lastCallTime < DEBOUNCE_MS) return;
 
-            if (preferVideo) {
-                // Incearca intai VIDEO
-                answered = clickButton(rootNode, VIDEO_BUTTON_IDS);
-                if (!answered) {
-                    // Fallback la AUDIO daca nu gaseste video
-                    answered = clickButton(rootNode, AUDIO_BUTTON_IDS);
-                }
-            } else {
-                // Incearca intai AUDIO
-                answered = clickButton(rootNode, AUDIO_BUTTON_IDS);
-                if (!answered) {
-                    answered = clickButton(rootNode, VIDEO_BUTTON_IDS);
-                }
-            }
-
-            if (answered) {
-                Log.i(TAG, "✅ Apel raspuns cu succes!");
-            } else {
-                Log.w(TAG, "⚠️ Nu am gasit butonul! Incerc gesture tap...");
-                // Ultima solutie: tap pe pozitia aproximativa a butonului de raspuns
-                tryGestureTap();
-            }
-
-        } finally {
-            rootNode.recycle();
-            // Reset dupa 5 secunde
-            handler.postDelayed(() -> isProcessingCall = false, 5000);
+        if (detectIncomingCall()) {
+            Log.i(TAG, "Apel detectat! Raspund in 2 secunde...");
+            lastCallTime = now;
+            isProcessingCall = true;
+            handler.postDelayed(this::answerCall, 2000);
         }
     }
 
-    /**
-     * Cauta si apasa un buton dupa ID
-     */
-    private boolean clickButton(AccessibilityNodeInfo rootNode, String[] buttonIds) {
-        for (String buttonId : buttonIds) {
-            List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByViewId(buttonId);
-            if (nodes != null && !nodes.isEmpty()) {
-                AccessibilityNodeInfo button = nodes.get(0);
-                if (button.isClickable()) {
-                    button.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    Log.i(TAG, "✅ Click pe buton: " + buttonId);
-                    return true;
-                } else {
-                    // Incearca parent-ul
-                    AccessibilityNodeInfo parent = button.getParent();
-                    if (parent != null && parent.isClickable()) {
-                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                        Log.i(TAG, "✅ Click pe parent: " + buttonId);
+    private boolean detectIncomingCall() {
+        // Metoda 1: cauta in toate ferestrele active
+        List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+        if (windows != null) {
+            for (android.view.accessibility.AccessibilityWindowInfo window : windows) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                String screenText = extractText(root).toLowerCase();
+                root.recycle();
+                for (String indicator : CALL_INDICATOR_TEXTS) {
+                    if (screenText.contains(indicator)) {
+                        Log.d(TAG, "Gasit indicator apel: " + indicator);
                         return true;
                     }
                 }
             }
         }
+
+        // Metoda 2: cauta in fereastra activa
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return false;
+        try {
+            // Cauta butoane de raspuns
+            for (String id : ALL_ANSWER_IDS) {
+                List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
+                if (nodes != null && !nodes.isEmpty()) {
+                    Log.d(TAG, "Gasit buton answer: " + id);
+                    return true;
+                }
+            }
+            // Cauta text indicator
+            String text = extractText(root).toLowerCase();
+            for (String indicator : CALL_INDICATOR_TEXTS) {
+                if (text.contains(indicator)) return true;
+            }
+        } finally {
+            root.recycle();
+        }
         return false;
     }
 
-    /**
-     * Fallback: tap gestural pe zona butonului de raspuns
-     * Pe ecranele de apel WhatsApp, butonul de raspuns e de obicei in dreapta jos
-     */
-    private void tryGestureTap() {
-        // Obtine dimensiunile ecranului
-        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
-        if (rootNode == null) return;
+    private void answerCall() {
+        boolean answered = false;
 
-        Rect bounds = new Rect();
-        rootNode.getBoundsInScreen(bounds);
-        rootNode.recycle();
+        // Incearca in toate ferestrele
+        List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+        if (windows != null) {
+            for (android.view.accessibility.AccessibilityWindowInfo window : windows) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                try {
+                    answered = clickAnswerButton(root);
+                    if (answered) break;
+                } finally {
+                    root.recycle();
+                }
+            }
+        }
 
-        int screenWidth = bounds.right;
-        int screenHeight = bounds.bottom;
+        // Incearca in fereastra activa
+        if (!answered) {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) {
+                try {
+                    answered = clickAnswerButton(root);
+                } finally {
+                    root.recycle();
+                }
+            }
+        }
 
-        // Pozitia aproximativa a butonului "Raspunde video" (dreapta jos pe ecran)
-        // Acestea sunt coordonate procentuale adaptabile la orice rezolutie
-        float tapX = screenWidth * 0.75f;
-        float tapY = screenHeight * 0.82f;
+        if (answered) {
+            Log.i(TAG, "Apel raspuns cu succes!");
+        } else {
+            Log.w(TAG, "Nu am gasit buton, incerc tap gestural...");
+            tryGestureTap();
+        }
 
-        Log.d(TAG, "🖱️ Gesture tap la: " + tapX + ", " + tapY);
-
-        Path tapPath = new Path();
-        tapPath.moveTo(tapX, tapY);
-
-        GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
-        gestureBuilder.addStroke(new GestureDescription.StrokeDescription(tapPath, 0, 100));
-        dispatchGesture(gestureBuilder.build(), null, null);
+        handler.postDelayed(() -> isProcessingCall = false, 5000);
     }
 
-    /**
-     * Extrage tot textul vizibil pe ecran
-     */
-    private String getScreenText(AccessibilityNodeInfo node) {
-        if (node == null) return "";
-        StringBuilder sb = new StringBuilder();
-        CharSequence text = node.getText();
-        if (text != null) sb.append(text).append(" ");
-        CharSequence desc = node.getContentDescription();
-        if (desc != null) sb.append(desc).append(" ");
+    private boolean clickAnswerButton(AccessibilityNodeInfo root) {
+        // 1. Cauta dupa ID
+        for (String id : ALL_ANSWER_IDS) {
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
+            if (nodes != null) {
+                for (AccessibilityNodeInfo node : nodes) {
+                    if (performClickOnNode(node)) return true;
+                }
+            }
+        }
+
+        // 2. Cauta dupa text pe butoane (pentru banner Huawei)
+        return findAndClickByText(root);
+    }
+
+    private boolean findAndClickByText(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+
+        // Verifica daca acest nod e un buton cu text "ANSWER"
+        if (node.isClickable()) {
+            String text = "";
+            if (node.getText() != null) text = node.getText().toString().toLowerCase();
+            if (node.getContentDescription() != null)
+                text += " " + node.getContentDescription().toString().toLowerCase();
+
+            for (String answerText : ANSWER_BUTTON_TEXTS) {
+                if (text.contains(answerText)) {
+                    // Exclude butonul DECLINE
+                    if (!text.contains("decline") && !text.contains("refuz") && !text.contains("respinge")) {
+                        Log.d(TAG, "Gasit buton prin text: " + text);
+                        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                    }
+                }
+            }
+        }
+
+        // Recursiv in copii
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                sb.append(getScreenText(child));
+                if (findAndClickByText(child)) {
+                    child.recycle();
+                    return true;
+                }
+                child.recycle();
+            }
+        }
+        return false;
+    }
+
+    private boolean performClickOnNode(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        if (node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+        AccessibilityNodeInfo parent = node.getParent();
+        if (parent != null) {
+            boolean result = parent.isClickable() && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            parent.recycle();
+            return result;
+        }
+        return false;
+    }
+
+    private void tryGestureTap() {
+        // Tap pe pozitia butonului ANSWER din banner (dreapta sus pe ecran Huawei)
+        // Banner-ul e ~200dp inaltime, butonul ANSWER e in dreapta
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+
+        // Pozitia aproximativa a butonului ANSWER in banner-ul Huawei
+        float tapX = screenWidth * 0.72f;  // "ANSWER" e spre dreapta
+        float tapY = screenHeight * 0.22f; // Banner e sus
+
+        Log.d(TAG, "Gesture tap la: " + tapX + ", " + tapY);
+        Path path = new Path();
+        path.moveTo(tapX, tapY);
+        GestureDescription gesture = new GestureDescription.Builder()
+            .addStroke(new GestureDescription.StrokeDescription(path, 0, 50))
+            .build();
+        dispatchGesture(gesture, null, null);
+
+        // Al doilea tap - pozitia butonului video in ecranul complet de apel
+        handler.postDelayed(() -> {
+            float tapX2 = screenWidth * 0.75f;
+            float tapY2 = screenHeight * 0.82f;
+            Path path2 = new Path();
+            path2.moveTo(tapX2, tapY2);
+            GestureDescription gesture2 = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path2, 0, 50))
+                .build();
+            dispatchGesture(gesture2, null, null);
+        }, 500);
+    }
+
+    private String extractText(AccessibilityNodeInfo node) {
+        if (node == null) return "";
+        StringBuilder sb = new StringBuilder();
+        if (node.getText() != null) sb.append(node.getText()).append(" ");
+        if (node.getContentDescription() != null) sb.append(node.getContentDescription()).append(" ");
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                sb.append(extractText(child));
                 child.recycle();
             }
         }
         return sb.toString();
     }
 
-    private boolean getPreferVideo() {
-        SharedPreferences prefs = getSharedPreferences("wa_settings", MODE_PRIVATE);
-        return prefs.getBoolean("prefer_video", true); // default: VIDEO
-    }
-
-    private int getAnswerDelay() {
-        SharedPreferences prefs = getSharedPreferences("wa_settings", MODE_PRIVATE);
-        return prefs.getInt("answer_delay_ms", 1500); // default: 1.5 secunde
-    }
-
     @Override
     public void onInterrupt() {
-        Log.w(TAG, "⚠️ Serviciu intrerupt");
         isProcessingCall = false;
     }
 
@@ -299,6 +298,5 @@ public class WhatsAppCallService extends AccessibilityService {
     public void onDestroy() {
         super.onDestroy();
         if (handler != null) handler.removeCallbacksAndMessages(null);
-        Log.i(TAG, "🛑 Serviciu oprit");
     }
 }
