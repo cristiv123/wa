@@ -260,18 +260,6 @@ public class WhatsAppCallService extends AccessibilityService {
             .addStroke(new GestureDescription.StrokeDescription(path, 0, 50))
             .build();
         dispatchGesture(gesture, null, null);
-
-        // Al doilea tap - pozitia butonului video in ecranul complet de apel
-        handler.postDelayed(() -> {
-            float tapX2 = screenWidth * 0.75f;
-            float tapY2 = screenHeight * 0.82f;
-            Path path2 = new Path();
-            path2.moveTo(tapX2, tapY2);
-            GestureDescription gesture2 = new GestureDescription.Builder()
-                .addStroke(new GestureDescription.StrokeDescription(path2, 0, 50))
-                .build();
-            dispatchGesture(gesture2, null, null);
-        }, 500);
     }
 
     private String extractText(AccessibilityNodeInfo node) {
