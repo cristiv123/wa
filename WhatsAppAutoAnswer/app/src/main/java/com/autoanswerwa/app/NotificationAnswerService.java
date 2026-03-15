@@ -76,17 +76,17 @@ public class NotificationAnswerService extends NotificationListenerService {
         // Pasul 2: Incearca sa raspunda prin notificare
         tryAnswerViaNotification(notification);
 
-        // Pasul 3: Deschide WhatsApp direct (fallback)
-        // Accessibility Service va apasa Answer cand ecranul e pornit
+        // Pasul 3: Deschide UnlockActivity care deblocheaza ecranul si deschide WhatsApp
         handler.postDelayed(() -> {
             try {
-                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(pkg);
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(launchIntent);
-                }
+                Intent unlockIntent = new Intent(this, UnlockActivity.class);
+                unlockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                                      Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                unlockIntent.putExtra("package", pkg);
+                startActivity(unlockIntent);
+                Log.i(TAG, "UnlockActivity pornit");
             } catch (Exception e) {
-                Log.e(TAG, "Eroare launch WhatsApp: " + e.getMessage());
+                Log.e(TAG, "Eroare UnlockActivity: " + e.getMessage());
             }
         }, 500);
 
