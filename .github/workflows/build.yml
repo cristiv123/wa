@@ -26,19 +26,14 @@ jobs:
         working-directory: WhatsAppAutoAnswer
         run: |
           gradle wrapper --gradle-version=8.6
-          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
-          grep -E "^.*error:.*|FAILURE|BUILD SUCCESSFUL" /tmp/build.log | grep -v "cache\|Caching" | tail -20
-
-      - name: Upload log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log
-          path: /tmp/build.log
+          ./gradlew :app:assembleDebug --no-daemon
+          echo "=== Cauta APK ==="
+          find . -name "*.apk" 2>/dev/null
+          find /home/runner -name "*.apk" 2>/dev/null
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: APK
-          path: WhatsAppAutoAnswer/app/build/outputs/apk/debug/
+          name: WhatsAppAutoAnswer-APK
+          path: "**/*.apk"
+          if-no-files-found: error
