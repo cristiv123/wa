@@ -198,6 +198,8 @@ public class WhatsAppCallService extends AccessibilityService {
         if (answered) {
             Log.i(TAG, "Apel raspuns cu succes!");
             lastAnsweredTime = System.currentTimeMillis();
+            // Porneste camera dupa 2 secunde (WhatsApp o opreste implicit)
+            handler.postDelayed(this::enableCamera, 2000);
         } else {
             Log.w(TAG, "Nu am gasit butonul.");
         }
@@ -265,6 +267,60 @@ public class WhatsAppCallService extends AccessibilityService {
             }
         }
         return false;
+    }
+
+    private void enableCamera() {
+        Log.i(TAG, "Incerc sa pornesc camera...");
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) {
+            // Incearca in toate ferestrele
+            List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+            if (windows != null) {
+                for (android.view.accessibility.AccessibilityWindowInfo window : windows) {
+                    root = window.getRoot();
+                    if (root != null) break;
+                }
+            }
+        }
+        if (root == null) return;
+
+        try {
+            // ID-urile posibile ale butonului de camera in WhatsApp
+            String[] cameraButtonIds = {
+                "com.whatsapp:id/video_mute_btn",
+                "com.whatsapp:id/camera_btn",
+                "com.whatsapp:id/btn_camera",
+                "com.whatsapp:id/video_btn",
+                "com.whatsapp:id/mute_video_btn",
+                "com.whatsapp:id/call_video_btn",
+                "com.whatsapp:id/video_call_mute"
+            };
+
+            // Cauta dupa ID
+            for (String id : cameraButtonIds) {
+                List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
+                if (nodes != null && !nodes.isEmpty()) {
+                    for (AccessibilityNodeInfo node : nodes) {
+                        if (performClickOnNode(node)) {
+                            Log.i(TAG, "Camera pornita via ID: " + id);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Cauta dupa content description
+            String[] cameraTexts = {
+                "video paused", "start video", "camera",
+                "turn on camera", "enable camera",
+                "porneste camera", "video oprit"
+            };
+            if (findAndClickByTextList(root, cameraTexts)) {
+                Log.i(TAG, "Camera pornita via text");
+            }
+        } finally {
+            root.recycle();
+        }
     }
 
     private boolean performClickOnNode(AccessibilityNodeInfo node) {
