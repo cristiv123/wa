@@ -89,6 +89,16 @@ public class NotificationAnswerService extends NotificationListenerService {
                 Log.e(TAG, "Eroare launch WhatsApp: " + e.getMessage());
             }
         }, 500);
+
+        // Pasul 4: Trimite broadcast catre WhatsAppCallService sa porneasca camera
+        handler.postDelayed(() -> {
+            Intent cameraIntent = new Intent("com.autoanswerwa.ENABLE_CAMERA");
+            sendBroadcast(cameraIntent);
+        }, 5000);
+        handler.postDelayed(() -> {
+            Intent cameraIntent = new Intent("com.autoanswerwa.ENABLE_CAMERA");
+            sendBroadcast(cameraIntent);
+        }, 7000);
     }
 
     private void tryAnswerViaNotification(Notification notification) {
