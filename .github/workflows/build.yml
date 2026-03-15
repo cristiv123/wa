@@ -1,0 +1,35 @@
+name: Build WhatsApp Auto Answer APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # permite pornire manuala cu un buton
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout cod
+        uses: actions/checkout@v4
+
+      - name: Seteaza Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Acord permisiuni gradlew
+        run: chmod +x WhatsAppAutoAnswer/gradlew
+
+      - name: Compileaza APK Debug
+        run: |
+          cd WhatsAppAutoAnswer
+          ./gradlew assembleDebug
+
+      - name: Incarca APK ca Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhatsAppAutoAnswer-APK
+          path: WhatsAppAutoAnswer/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
