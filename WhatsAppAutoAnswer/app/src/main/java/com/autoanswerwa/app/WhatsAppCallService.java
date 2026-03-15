@@ -2,10 +2,12 @@ package com.autoanswerwa.app;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.content.Context;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -17,6 +19,8 @@ public class WhatsAppCallService extends AccessibilityService {
     private static final String TAG = "WA_AutoAnswer";
     private static final String WHATSAPP_PACKAGE = "com.whatsapp";
     private static final String WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b";
+
+    private PowerManager.WakeLock wakeLock;
 
     // Toate ID-urile posibile pentru butonul de raspuns video/audio
     private static final String[] ALL_ANSWER_IDS = {
@@ -73,6 +77,12 @@ public class WhatsAppCallService extends AccessibilityService {
     public void onCreate() {
         super.onCreate();
         handler = new Handler(Looper.getMainLooper());
+        // Initializeaza WakeLock pentru a trezi ecranul la apel
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "WhatsAppAutoAnswer:WakeLock"
+        );
         Log.i(TAG, "Serviciu pornit");
     }
 
@@ -103,9 +113,13 @@ public class WhatsAppCallService extends AccessibilityService {
         if (now - lastAnsweredTime < COOLDOWN_AFTER_ANSWER_MS) return;
 
         if (detectIncomingCall()) {
-            Log.i(TAG, "Apel detectat! Raspund in 2 secunde...");
+            Log.i(TAG, "Apel detectat! Trezesc ecranul si raspund in 2 secunde...");
             lastCallTime = now;
             isProcessingCall = true;
+            // Trezeste ecranul imediat
+            if (wakeLock != null && !wakeLock.isHeld()) {
+                wakeLock.acquire(30000); // max 30 secunde
+            }
             handler.postDelayed(this::answerCall, 2000);
         }
     }
@@ -189,7 +203,10 @@ public class WhatsAppCallService extends AccessibilityService {
             Log.i(TAG, "Ecran blocat detectat - fac swipe up");
             doSwipeUp();
             lastAnsweredTime = System.currentTimeMillis();
-            handler.postDelayed(() -> isProcessingCall = false, 5000);
+            handler.postDelayed(() -> {
+                isProcessingCall = false;
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            }, 5000);
             return;
         }
 
@@ -227,7 +244,10 @@ public class WhatsAppCallService extends AccessibilityService {
             Log.w(TAG, "Nu am gasit butonul de raspuns.");
         }
 
-        handler.postDelayed(() -> isProcessingCall = false, 5000);
+        handler.postDelayed(() -> {
+            isProcessingCall = false;
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        }, 5000);
     }
 
     private boolean isLockedScreenCall() {
