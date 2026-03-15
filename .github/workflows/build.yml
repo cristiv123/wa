@@ -19,15 +19,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Seteaza Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.2'
+      - name: Instaleaza Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Compileaza APK Debug
+      - name: Compileaza APK
+        working-directory: WhatsAppAutoAnswer
         run: |
-          cd WhatsAppAutoAnswer
-          gradle assembleDebug
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.useAndroidX=true
 
       - name: Incarca APK
         uses: actions/upload-artifact@v4
