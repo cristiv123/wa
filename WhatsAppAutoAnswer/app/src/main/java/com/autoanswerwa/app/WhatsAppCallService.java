@@ -46,14 +46,20 @@ public class WhatsAppCallService extends AccessibilityService {
         "video", "antworten", "répondre", "risposta"
     };
 
-    // Texte care indica un apel incoming
+    // Texte care indica UN APEL ACTIV incoming
     private static final String[] CALL_INDICATOR_TEXTS = {
         "incoming video call", "incoming voice call",
         "apel video", "apel vocal", "apel audio",
-        "video call", "voice call",
         "whatsapp video", "whatsapp call",
         "video-anruf", "sprachanruf",
         "appel vidéo", "appel vocal"
+    };
+
+    // Texte care indica ca NU e un apel activ (istoric, chat, etc.)
+    private static final String[] NOT_A_CALL_TEXTS = {
+        "no answer", "missed", "declined", "fara raspuns",
+        "nepreluат", "message", "mesaj", "record video note",
+        "type a message", "online", "last seen", "typing"
     };
 
     private Handler handler;
@@ -113,6 +119,17 @@ public class WhatsAppCallService extends AccessibilityService {
                 if (root == null) continue;
                 String screenText = extractText(root).toLowerCase();
                 root.recycle();
+
+                // Daca e ecran de chat/istoric, ignora complet
+                boolean isChatScreen = false;
+                for (String notCall : NOT_A_CALL_TEXTS) {
+                    if (screenText.contains(notCall)) {
+                        isChatScreen = true;
+                        break;
+                    }
+                }
+                if (isChatScreen) continue;
+
                 for (String indicator : CALL_INDICATOR_TEXTS) {
                     if (screenText.contains(indicator)) {
                         Log.d(TAG, "Gasit indicator apel: " + indicator);
@@ -126,6 +143,12 @@ public class WhatsAppCallService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return false;
         try {
+            // Daca e ecran de chat, nu e apel activ
+            String text = extractText(root).toLowerCase();
+            for (String notCall : NOT_A_CALL_TEXTS) {
+                if (text.contains(notCall)) return false;
+            }
+
             // Cauta butoane de raspuns
             for (String id : ALL_ANSWER_IDS) {
                 List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
@@ -135,7 +158,6 @@ public class WhatsAppCallService extends AccessibilityService {
                 }
             }
             // Cauta text indicator
-            String text = extractText(root).toLowerCase();
             for (String indicator : CALL_INDICATOR_TEXTS) {
                 if (text.contains(indicator)) return true;
             }
