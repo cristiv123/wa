@@ -71,6 +71,8 @@ public class WhatsAppCallService extends AccessibilityService {
     private static final long COOLDOWN_AFTER_ANSWER_MS = 12000;
     private PowerManager.WakeLock wakeLock;
 
+    private android.content.BroadcastReceiver cameraReceiver;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -80,6 +82,18 @@ public class WhatsAppCallService extends AccessibilityService {
             PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
             "WhatsAppAutoAnswer:WakeLock"
         );
+
+        // Receiver pentru semnalul de pornire camera
+        cameraReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, android.content.Intent intent) {
+                Log.i(TAG, "Primit semnal ENABLE_CAMERA");
+                enableCamera();
+            }
+        };
+        android.content.IntentFilter filter = new android.content.IntentFilter("com.autoanswerwa.ENABLE_CAMERA");
+        registerReceiver(cameraReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+
         Log.i(TAG, "Serviciu pornit");
     }
 
@@ -198,8 +212,10 @@ public class WhatsAppCallService extends AccessibilityService {
         if (answered) {
             Log.i(TAG, "Apel raspuns cu succes!");
             lastAnsweredTime = System.currentTimeMillis();
-            // Porneste camera dupa 2 secunde (WhatsApp o opreste implicit)
-            handler.postDelayed(this::enableCamera, 2000);
+            // Incearca sa porneasca camera de 3 ori cu delay crescator
+            handler.postDelayed(() -> enableCamera(), 2000);
+            handler.postDelayed(() -> enableCamera(), 4000);
+            handler.postDelayed(() -> enableCamera(), 6000);
         } else {
             Log.w(TAG, "Nu am gasit butonul.");
         }
@@ -355,5 +371,8 @@ public class WhatsAppCallService extends AccessibilityService {
         super.onDestroy();
         if (handler != null) handler.removeCallbacksAndMessages(null);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        if (cameraReceiver != null) {
+            try { unregisterReceiver(cameraReceiver); } catch (Exception e) {}
+        }
     }
 }
