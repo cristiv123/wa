@@ -43,6 +43,12 @@ public class WhatsAppCallService extends AccessibilityService {
         "antworten", "répondre", "risposta"
     };
 
+    // Texte specifice pentru butonul VIDEO (prioritate mare)
+    private static final String[] VIDEO_BUTTON_TEXTS = {
+        "answer video", "video answer", "video call",
+        "raspunde video", "accepta video"
+    };
+
     private static final String[] CALL_INDICATOR_TEXTS = {
         "incoming video call", "incoming voice call",
         "apel video", "apel vocal", "apel audio",
@@ -203,26 +209,49 @@ public class WhatsAppCallService extends AccessibilityService {
     }
 
     private boolean clickAnswerButton(AccessibilityNodeInfo root) {
+        // Prioritate 1: cauta buton VIDEO dupa ID
+        for (String id : ALL_ANSWER_IDS) {
+            if (!id.contains("video")) continue;
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
+            if (nodes != null) {
+                for (AccessibilityNodeInfo node : nodes) {
+                    if (performClickOnNode(node)) {
+                        Log.i(TAG, "Click VIDEO button by ID: " + id);
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Prioritate 2: cauta buton VIDEO dupa text
+        if (findAndClickByTextList(root, VIDEO_BUTTON_TEXTS)) return true;
+
+        // Prioritate 3: cauta orice buton Answer dupa ID
         for (String id : ALL_ANSWER_IDS) {
             List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(id);
             if (nodes != null) {
                 for (AccessibilityNodeInfo node : nodes) {
-                    if (performClickOnNode(node)) return true;
+                    if (performClickOnNode(node)) {
+                        Log.i(TAG, "Click answer button by ID: " + id);
+                        return true;
+                    }
                 }
             }
         }
-        return findAndClickByText(root);
+
+        // Prioritate 4: cauta orice buton Answer dupa text
+        return findAndClickByTextList(root, ANSWER_BUTTON_TEXTS);
     }
 
-    private boolean findAndClickByText(AccessibilityNodeInfo node) {
+    private boolean findAndClickByTextList(AccessibilityNodeInfo node, String[] texts) {
         if (node == null) return false;
         if (node.isClickable()) {
             String text = "";
             if (node.getText() != null) text = node.getText().toString().toLowerCase();
             if (node.getContentDescription() != null)
                 text += " " + node.getContentDescription().toString().toLowerCase();
-            for (String answerText : ANSWER_BUTTON_TEXTS) {
-                if (text.contains(answerText) &&
+            for (String t : texts) {
+                if (text.contains(t) &&
                     !text.contains("decline") && !text.contains("refuz")) {
                     if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
                 }
@@ -231,7 +260,7 @@ public class WhatsAppCallService extends AccessibilityService {
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                if (findAndClickByText(child)) { child.recycle(); return true; }
+                if (findAndClickByTextList(child, texts)) { child.recycle(); return true; }
                 child.recycle();
             }
         }
