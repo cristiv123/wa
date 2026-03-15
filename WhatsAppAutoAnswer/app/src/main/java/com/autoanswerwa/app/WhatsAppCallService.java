@@ -130,6 +130,14 @@ public class WhatsAppCallService extends AccessibilityService {
                 }
                 if (isChatScreen) continue;
 
+                // Detecteaza si ecranul blocat cu "swipe up to accept"
+                if (screenText.contains("swipe up to accept") ||
+                    screenText.contains("swipe to answer") ||
+                    screenText.contains("glisati in sus")) {
+                    Log.d(TAG, "Detectat apel pe ecran blocat - swipe up necesar");
+                    return true;
+                }
+
                 for (String indicator : CALL_INDICATOR_TEXTS) {
                     if (screenText.contains(indicator)) {
                         Log.d(TAG, "Gasit indicator apel: " + indicator);
@@ -143,10 +151,16 @@ public class WhatsAppCallService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return false;
         try {
-            // Daca e ecran de chat, nu e apel activ
             String text = extractText(root).toLowerCase();
+
+            // Daca e ecran de chat, nu e apel activ
             for (String notCall : NOT_A_CALL_TEXTS) {
                 if (text.contains(notCall)) return false;
+            }
+
+            // Ecran blocat cu swipe
+            if (text.contains("swipe up to accept") || text.contains("swipe to answer")) {
+                return true;
             }
 
             // Cauta butoane de raspuns
@@ -169,6 +183,15 @@ public class WhatsAppCallService extends AccessibilityService {
 
     private void answerCall() {
         boolean answered = false;
+
+        // Verifica daca e ecran blocat cu "swipe up to accept"
+        if (isLockedScreenCall()) {
+            Log.i(TAG, "Ecran blocat detectat - fac swipe up");
+            doSwipeUp();
+            lastAnsweredTime = System.currentTimeMillis();
+            handler.postDelayed(() -> isProcessingCall = false, 5000);
+            return;
+        }
 
         // Incearca in toate ferestrele
         List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
@@ -205,6 +228,55 @@ public class WhatsAppCallService extends AccessibilityService {
         }
 
         handler.postDelayed(() -> isProcessingCall = false, 5000);
+    }
+
+    private boolean isLockedScreenCall() {
+        List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+        if (windows != null) {
+            for (android.view.accessibility.AccessibilityWindowInfo window : windows) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                String text = extractText(root).toLowerCase();
+                root.recycle();
+                if (text.contains("swipe up to accept") || text.contains("swipe to answer")) {
+                    return true;
+                }
+            }
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root != null) {
+            try {
+                String text = extractText(root).toLowerCase();
+                if (text.contains("swipe up to accept") || text.contains("swipe to answer")) {
+                    return true;
+                }
+            } finally {
+                root.recycle();
+            }
+        }
+        return false;
+    }
+
+    private void doSwipeUp() {
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+
+        // Butonul verde "Swipe up to accept" e in centru-jos al ecranului
+        // Glisam de la butonul verde in sus ~300px
+        float startX = screenWidth * 0.50f;
+        float startY = screenHeight * 0.82f;  // pozitia butonului verde
+        float endY   = screenHeight * 0.50f;  // glisare in sus
+
+        Log.d(TAG, "Swipe up: " + startX + " de la " + startY + " la " + endY);
+
+        Path swipePath = new Path();
+        swipePath.moveTo(startX, startY);
+        swipePath.lineTo(startX, endY);
+
+        GestureDescription gesture = new GestureDescription.Builder()
+            .addStroke(new GestureDescription.StrokeDescription(swipePath, 0, 500))
+            .build();
+        dispatchGesture(gesture, null, null);
     }
 
     private boolean clickAnswerButton(AccessibilityNodeInfo root) {
