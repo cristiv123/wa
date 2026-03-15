@@ -22,6 +22,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Activity transparent care se afiseaza peste lock screen -->
+        <activity
+            android:name=".UnlockActivity"
+            android:exported="false"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Serviciul de accesibilitate (pentru ecran pornit) -->
         <service
             android:name=".WhatsAppCallService"
