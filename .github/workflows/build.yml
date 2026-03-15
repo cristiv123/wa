@@ -22,13 +22,23 @@ jobs:
       - name: Instaleaza Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Verifica structura proiect
+        run: |
+          echo "=== Root ==="
+          ls -la WhatsAppAutoAnswer/
+          echo "=== App ==="
+          ls -la WhatsAppAutoAnswer/app/
+          echo "=== settings.gradle ==="
+          cat WhatsAppAutoAnswer/settings.gradle
+          echo "=== build.gradle root ==="
+          cat WhatsAppAutoAnswer/build.gradle
+          echo "=== app/build.gradle ==="
+          cat WhatsAppAutoAnswer/app/build.gradle
+
       - name: Compileaza APK
         working-directory: WhatsAppAutoAnswer
         run: |
-          gradle assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            -Pandroid.useAndroidX=true
+          gradle :app:assembleDebug --no-daemon --info
 
       - name: Incarca APK
         uses: actions/upload-artifact@v4
